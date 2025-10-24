@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>PPC Regex Generator</title>
+        <style>
+            body {
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    "Segoe UI",
+                    Roboto,
+                    Ubuntu,
+                    "Helvetica Neue",
+                    Arial;
+                margin: 18px;
+                color: #e0e0e0; /* light text for dark background */
+                background: #121212; /* dark background */
+            }
+            h1 {
+                font-size: 20px;
+                margin-bottom: 12px;
+                color: #fff;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: 1fr 360px;
+                gap: 16px;
+            }
+            textarea {
+                width: 100%;
+                height: 260px;
+                font-family: monospace;
+                font-size: 13px;
+                padding: 8px;
+                box-sizing: border-box;
+                background: #1e1e1e;
+                color: #e0e0e0;
+                border: 1px solid #333;
+                border-radius: 6px;
+            }
+            .panel {
+                border: 1px solid #333;
+                padding: 12px;
+                border-radius: 8px;
+                background: #1e1e1e;
+            }
+            label {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                margin-bottom: 8px;
+                color: #ccc;
+            }
+            .options {
+                display: flex;
+                flex-direction: column;
+            }
+            .btn {
+                display: inline-block;
+                padding: 8px 10px;
+                border-radius: 6px;
+                border: 1px solid #2b6;
+                cursor: pointer;
+                background: #2b6;
+                color: #fff;
+                font-size: 13px;
+            }
+            .btn.secondary {
+                background: #28f;
+                border-color: #28f;
+                margin-left: 8px;
+                color: #fff;
+            }
+            pre {
+                background: #1e1e1e;
+                color: #dcdcdc;
+                padding: 10px;
+                border-radius: 6px;
+                overflow: auto;
+            }
+            .matches {
+                white-space: pre-wrap;
+                font-family: monospace;
+                background: #2a2a2a;
+                border-radius: 6px;
+                padding: 8px;
+                border: 1px solid #444;
+                max-height: 240px;
+                overflow: auto;
+                color: #e0e0e0;
+            }
+            .small {
+                font-size: 13px;
+                color: #aaa;
+            }
+            .mt-8 {
+                margin-top: 8px;
+            }
+            .mt-12 {
+                margin-top: 12px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>PPC Instruction -> Regex Generator</h1>
+        <div class="grid">
+            <div>
+                <div class="panel">
+                    <div class="small">
+                        Paste disassembly lines. Comments (<code>/* … */</code>)
+                        are preserved but ignored in content.
+                    </div>
+                    <textarea id="input" spellcheck="false">
+/* 8025E07C 0025AE9C  41 82 00 9C */	beq .L_8025E118
+/* 8025E080 0025AEA0  3C 60 80 38 */	lis r3, "@stringBase0"@ha
+/* 8025E084 0025AEA4  38 63 96 08 */	addi r3, r3, "@stringBase0"@l
+/* 8025E088 0025AEA8  38 63 00 9A */	addi r3, r3, 0x9a
+                    </textarea>
+                </div>
+
+                <div class="panel mt-12">
+                    <div class="small">Match options</div>
+                    <div class="options">
+                        <label
+                            ><input
+                                type="checkbox"
+                                id="ignoreRegisters"
+                                checked
+                            />
+                            Ignore register numbers</label
+                        >
+                        <label
+                            ><input
+                                type="checkbox"
+                                id="ignoreImmediates"
+                                checked
+                            />
+                            Ignore numeric constants</label
+                        >
+                        <label
+                            ><input type="checkbox" id="ignoreLabels" /> Ignore
+                            labels</label
+                        >
+                        <label
+                            ><input type="checkbox" id="ignoreStrings" /> Ignore
+                            string/quoted contents</label
+                        >
+                        <label
+                            ><input type="checkbox" id="mnemonicOnly" />
+                            Mnemonic only (drop operands)</label
+                        >
+                    </div>
+                </div>
+
+                <div class="panel mt-12">
+                    <div class="small">Generated regex</div>
+                    <pre id="output">(click Generate)</pre>
+                </div>
+
+                <div class="panel mt-12">
+                    <div class="small">Match against input</div>
+                    <div id="matches" class="matches">
+                        (click Test on input)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const escapeForRegex = (s) =>
+                s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+            function buildPatternFromFullLine(line, opts) {
+                const commentMatch = line.match(/^(\s*\/\*).*?(\*\/)(.*)$/);
+                const instrPart = commentMatch
+                    ? commentMatch[3].trim()
+                    : line.trim();
+
+                if (opts.mnemonicOnly) {
+                    const mnemonic = escapeForRegex(instrPart.split(/\s+/)[0]);
+                    return "\\s*/\\*.*?\\*/\\s*" + mnemonic + "\\b.*";
+                }
+
+                const parts = instrPart.split(/(\s|,)/);
+                const newParts = parts.map((p) => {
+                    if (opts.ignoreRegisters && /^[rf]\d+$/i.test(p))
+                        return "r\\d+";
+                    if (opts.ignoreImmediates && /^0x[0-9A-Fa-f]+$/.test(p))
+                        return "0x[0-9A-Fa-f]+";
+                    if (opts.ignoreImmediates && /^-?\d+$/.test(p))
+                        return "-?\\d+";
+                    if (
+                        opts.ignoreLabels &&
+                        /^\.?\w[\w\d_]*$/.test(p) &&
+                        !/^[rf]\d+$/i.test(p) &&
+                        !/^0x[0-9A-Fa-f]+$/.test(p) &&
+                        !/^-?\d+$/.test(p)
+                    ) {
+                        return ".+?";
+                    }
+                    if (opts.ignoreStrings && /^".*?"(@\w+)?$/.test(p)) {
+                        return '".*?"(@\\w+)?';
+                    }
+                    return escapeForRegex(p);
+                });
+
+                return "\\s*/\\*.*?\\*/\\s*" + newParts.join("");
+            }
+
+            function buildFullRegex(lines, opts) {
+                return lines
+                    .map((line) => buildPatternFromFullLine(line, opts))
+                    .filter((p) => p.length > 0)
+                    .join("\\r?\\n");
+            }
+
+            const inputBox = document.getElementById("input");
+            const outputBox = document.getElementById("output");
+            const matchesBox = document.getElementById("matches");
+
+            const opts = () => ({
+                ignoreRegisters:
+                    document.getElementById("ignoreRegisters").checked,
+                ignoreImmediates:
+                    document.getElementById("ignoreImmediates").checked,
+                ignoreLabels: document.getElementById("ignoreLabels").checked,
+                ignoreStrings: document.getElementById("ignoreStrings").checked,
+                mnemonicOnly: document.getElementById("mnemonicOnly").checked,
+            });
+
+            // Prevent constant text input updates
+            function debounce(func, delay) {
+                let timer;
+                return (...args) => {
+                    clearTimeout(timer);
+                    timer = setTimeout(() => func(...args), delay);
+                };
+            }
+
+            function updateRegexAndMatches() {
+                const lines = inputBox.value
+                    .split(/\r?\n/)
+                    .filter((l) => l.trim().length > 0);
+                outputBox.textContent = lines.length
+                    ? buildFullRegex(lines, opts())
+                    : "(no input)";
+
+                try {
+                    const re = new RegExp(outputBox.textContent, "g");
+                    const matched = inputBox.value.match(re);
+                    matchesBox.textContent = matched?.length
+                        ? matched.join("\n")
+                        : "(no matches)";
+                } catch (e) {
+                    matchesBox.textContent = "Invalid regex: " + e.message;
+                }
+            }
+
+            const debouncedUpdate = debounce(updateRegexAndMatches, 300);
+
+            inputBox.addEventListener("input", debouncedUpdate);
+
+            // Also update when options change
+            document
+                .querySelectorAll('input[type="checkbox"]')
+                .forEach((checkbox) => {
+                    checkbox.addEventListener("change", debouncedUpdate);
+                });
+
+            // Initial run
+            updateRegexAndMatches();
+        </script>
+    </body>
+</html>
