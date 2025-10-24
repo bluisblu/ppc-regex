@@ -173,24 +173,34 @@
                 s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
             function buildPatternFromFullLine(line, opts) {
+                // Extract the part after the comment
                 const commentMatch = line.match(/^(\s*\/\*).*?(\*\/)(.*)$/);
                 const instrPart = commentMatch
                     ? commentMatch[3].trim()
                     : line.trim();
 
+                if (!instrPart) return ""; // empty line after comment
+
                 if (opts.mnemonicOnly) {
+                    // Only keep mnemonic, drop operands
                     const mnemonic = escapeForRegex(instrPart.split(/\s+/)[0]);
                     return "\\s*/\\*.*?\\*/\\s*" + mnemonic + "\\b.*";
                 }
 
-                const parts = instrPart.split(/(\s|,)/);
-                const newParts = parts.map((p) => {
+                const parts = instrPart.split(/(\s|,)/); // keep separators
+                const newParts = parts.map((p, i) => {
+                    // Always preserve the mnemonic
+                    if (i === 0) return escapeForRegex(p);
+
                     if (opts.ignoreRegisters && /^[rf]\d+$/i.test(p))
                         return "r\\d+";
+
+                    // Replace numeric constants
                     if (opts.ignoreImmediates && /^0x[0-9A-Fa-f]+$/.test(p))
                         return "0x[0-9A-Fa-f]+";
                     if (opts.ignoreImmediates && /^-?\d+$/.test(p))
                         return "-?\\d+";
+
                     if (
                         opts.ignoreLabels &&
                         /^\.?\w[\w\d_]*$/.test(p) &&
@@ -200,9 +210,11 @@
                     ) {
                         return ".+?";
                     }
+
                     if (opts.ignoreStrings && /^".*?"(@\w+)?$/.test(p)) {
                         return '".*?"(@\\w+)?';
                     }
+
                     return escapeForRegex(p);
                 });
 
